@@ -9,52 +9,47 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ফোল্ডার এবং ফাইল পাথ ঠিক করা
 const binDir = path.join(__dirname, 'bin');
 const ytDlpPath = path.join(binDir, 'yt-dlp');
 
-// সার্ভার চালু হওয়ার সময় স্বয়ংক্রিয়ভাবে yt-dlp ডাউনলোড করার ফাংশন
+// Download latest yt-dlp binary automatically at runtime
 function downloadYtDlp() {
     if (!fs.existsSync(binDir)){
         fs.mkdirSync(binDir, { recursive: true });
     }
 
     if (!fs.existsSync(ytDlpPath)) {
-        console.log("Downloading yt-dlp...");
+        console.log("Downloading latest yt-dlp...");
         const file = fs.createWriteStream(ytDlpPath);
-        // সর্বাধুনিক লিনাক্স রিলিজ ডাউনলোড করা হচ্ছে
         https.get("https://github.com", response => {
             response.pipe(file);
             file.on('finish', () => {
                 file.close();
-                console.log("yt-dlp downloaded successfully.");
-                // ফাইলটিকে এক্সিকিউটেবল পারমিশন দেওয়া (+x)
+                console.log("yt-dlp download complete.");
                 fs.chmodSync(ytDlpPath, '755');
             });
         }).on('error', err => {
             fs.unlink(ytDlpPath, () => {});
-            console.error(`Download error: ${err.message}`);
+            console.error(`Download fail: ${err.message}`);
         });
     } else {
-        console.log("yt-dlp already exists.");
         fs.chmodSync(ytDlpPath, '755');
     }
 }
 
-// ফাংশনটি কল করা
 downloadYtDlp();
 
 app.post('/api/fetch', (req, res) => {
     const { videoUrl } = req.body;
     if (!videoUrl) return res.status(400).json({ error: 'URL is required' });
 
-    // স্বয়ংক্রিয়ভাবে তৈরি হওয়া পাথ ব্যবহার করে কমান্ড রান করা
-    const command = `"${ytDlpPath}" -j --no-warnings "${videoUrl}"`;
+    // Added common User-Agent string to bypass bot detection blocks
+    const command = `"${ytDlpPath}" -j --no-warnings --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" "${videoUrl}"`;
 
     exec(command, (error, stdout, stderr) => {
         if (error) {
             console.error(`Exec Error: ${stderr}`);
-            return res.status(500).json({ error: 'Could not extract video. Platform might be blocked or link is invalid.' });
+            return res.status(500).json({ error: 'Could not extract video. The link might be invalid, private, or the platform blocked our request.' });
         }
         try {
             const videoData = JSON.parse(stdout);
@@ -71,10 +66,10 @@ app.post('/api/fetch', (req, res) => {
                 downloadUrl: downloadLink
             });
         } catch (e) {
-            res.status(500).json({ error: 'Failed to process video data.' });
+            res.status(500).json({ error: 'Failed to process video metadata structure.' });
         }
     });
 });
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`Server live on port ${PORT}`));
